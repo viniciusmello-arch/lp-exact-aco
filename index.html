@@ -5,11 +5,22 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Exact Aço — A margem mora nos detalhes</title>
 <meta name="description" content="Corte, dobra e ferragens armadas com precisão de fábrica. 11% de perda no canteiro vira zero. Preço travado, entrega no cronograma. Chapecó/SC.">
+<link rel="canonical" href="https://lp.exactaco.com.br/">
 <meta property="og:title" content="Exact Aço — A margem mora nos detalhes">
 <meta property="og:description" content="Corte, dobra e ferragens armadas com precisão de fábrica. Perda de aço no canteiro eliminada, preço travado e entrega em até 5 dias úteis.">
 <meta property="og:type" content="website">
-<meta property="og:image" content="assets/img/gen/g_cage_dark.png">
+<meta property="og:url" content="https://lp.exactaco.com.br/">
+<!-- og:image ABSOLUTO — WhatsApp/Facebook não renderizam preview com caminho relativo. -->
+<meta property="og:image" content="https://lp.exactaco.com.br/assets/img/gen/g_cage_dark.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:locale" content="pt_BR">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Exact Aço — A margem mora nos detalhes">
+<meta name="twitter:description" content="Corte, dobra e ferragens armadas com precisão de fábrica. Preço travado, entrega no cronograma.">
+<meta name="twitter:image" content="https://lp.exactaco.com.br/assets/img/gen/g_cage_dark.png">
 <meta name="theme-color" content="#0a0a0c">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230a0a0c'/%3E%3Ctext x='32' y='45' font-family='Arial,Helvetica,sans-serif' font-size='40' font-weight='700' fill='%23eceae4' text-anchor='middle'%3EE%3C/text%3E%3C/svg%3E">
 
 <!-- ============================================================
      VERSÃO 5 — "ASSINATURA"
@@ -588,15 +599,50 @@ if(reduce){ document.querySelectorAll('video').forEach(function(v){ v.pause(); v
   io.observe(grid);
 })();
 
-/* ---------- FORM ---------- */
-document.getElementById('f').addEventListener('submit',function(ev){
-  ev.preventDefault();
-  var d=Object.fromEntries(new FormData(ev.target));
-  if(!d.nome||!d.empresa||!d.telefone){alert('Preencha nome, empresa e telefone.');return;}
-  track('form_submit',d);
-  var t='Orcamento pelo site%0A%0ANome: '+d.nome+'%0AEmpresa: '+d.empresa+'%0ACidade: '+(d.cidade||'-')+'%0ATelefone: '+d.telefone+'%0AE-mail: '+(d.email||'-')+'%0AObra: '+(d.obra||'-')+'%0A%0A'+(d.mensagem||'');
-  open('https://wa.me/'+WPP+'?text='+t,'_blank');
-});
+/* ---------- FORM: grava no CRM (via proxy do servidor) + fallback WhatsApp ---------- */
+function esc(s){ return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+function waHref(d){
+  /* encodeURIComponent na mensagem INTEIRA — antes um '&'/'#'/'R$' do usuário
+     quebrava a URL do WhatsApp e truncava o recado. */
+  var linhas=[
+    'Orçamento pelo site','',
+    'Nome: '+d.nome,
+    'Empresa: '+d.empresa,
+    'Cidade: '+(d.cidade||'-'),
+    'Telefone: '+d.telefone,
+    'E-mail: '+(d.email||'-'),
+    'Obra: '+(d.obra||'-'),
+    '', (d.mensagem||'')
+  ];
+  return 'https://wa.me/'+WPP+'?text='+encodeURIComponent(linhas.join('\n'));
+}
+(function(){
+  var form=document.getElementById('f');
+  form.addEventListener('submit',function(ev){
+    ev.preventDefault();
+    var d=Object.fromEntries(new FormData(form));
+    d.nome=(d.nome||'').trim(); d.empresa=(d.empresa||'').trim(); d.telefone=(d.telefone||'').trim();
+    if(!d.nome||!d.empresa||!d.telefone){ alert('Preencha nome, empresa e telefone.'); return; }
+    track('form_submit',d);
+    var btn=form.querySelector('button[type=submit]');
+    if(btn){ btn.disabled=true; btn.textContent='Enviando…'; }
+    var wa=waHref(d);
+    function confirmar(){
+      /* Painel de confirmação. O WhatsApp é BOTÃO (clique do usuário), não
+         window.open automático — que o navegador bloquearia após o await. */
+      form.innerHTML =
+        '<h3>Recebido, '+esc(d.nome.split(/\s+/)[0]||'')+'.</h3>'+
+        '<p class="fnote" style="margin:10px 0 20px;font-size:14px">Sua solicitação chegou à nossa engenharia — já vamos te chamar. Se quiser adiantar, fale agora no WhatsApp com a prancha em mãos.</p>'+
+        '<a class="btn btn-line" target="_blank" rel="noopener" id="waDone" href="'+wa+'">Falar no WhatsApp</a>';
+      var b=document.getElementById('waDone');
+      if(b) b.addEventListener('click',function(){ track('cta_whatsapp',{ctx:'pos_form'}); });
+    }
+    fetch('/api/lead',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(d)})
+      .then(function(r){ track('lead_'+(r.ok?'ok':'fail'),{status:r.status}); })
+      .catch(function(){ track('lead_fail',{status:0}); })
+      .finally(confirmar); /* mostra o painel + WhatsApp mesmo se o CRM falhar — nunca perde o lead */
+  });
+})();
 
 function track(ev,data){
   if(window.dataLayer)dataLayer.push(Object.assign({event:ev},data));
